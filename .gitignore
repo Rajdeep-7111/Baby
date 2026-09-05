@@ -1,0 +1,71 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Testing
+.pytest_tmp/
+.pytest_cache/
+.pytest-*/
+.coverage
+htmlcov/
+
+# Databases / local state
+*.db
+*.sqlite
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Credentials / OAuth
+credentials.json
+credentials/
+token.json
+client_secret*.json
+*-credentials.json
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Generated screenshots
+Pictures/
+screenshots/
+
+# Python packaging
+*.egg-info/
+
+# Local backups / temporary project files
+app_backup_v1/
+app_backup_v2/
+baby.txt
+README (1).md
+
+# Local data / runtime state
+data/
+
+# Development backups
+*_old.py
+*_old.jsx
+*_backup.py
+*_backup.jsx
+*_backup/
+src_backup/
