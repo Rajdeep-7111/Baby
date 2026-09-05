@@ -1,240 +1,366 @@
-# Baby
+# Baby — Personal AI Operating System
 
-Minimal FastAPI backend for the Baby personal AI OS.
+> A full-stack personal AI assistant that combines LLM reasoning, tool orchestration, persistent memory, voice interaction, Gmail, Google Calendar, web access, and controlled Windows desktop automation.
 
-## Mock AI architecture
+Baby is a personal AI OS prototype built to explore how an AI assistant can move beyond chat and become an action-oriented system. Instead of giving an LLM unrestricted control, Baby uses a structured orchestration layer that routes requests through explicit tools and services.
 
-Baby V0.2 exposes `POST /chat` with a JSON body such as `{"message": "Hello Baby"}`.
-The API delegates to `AIService`, which depends only on the generic `AIProvider`
-contract. The current `MockAIProvider` returns deterministic local text and makes
-no network or external API calls. A future provider can implement the same
-`generate(message)` method without changing the API layer.
+## ✨ What Baby Can Do
 
-## Local tools
+- 🧠 **AI orchestration** — routes conversations and actionable requests through an AI gateway and task system.
+- 🔧 **Tool-based execution** — calculator, date/time, file reading, web search, web fetching, Calendar, Gmail, and desktop tools.
+- 🧩 **Provider-independent AI layer** — separates the assistant architecture from the underlying AI provider.
+- 💾 **Persistent memory** — stores explicitly created preferences, facts, and instructions using SQLite.
+- 💬 **Session persistence** — maintains assistant conversation/session state.
+- 📅 **Google Calendar** — read and create calendar events through Google APIs.
+- 📧 **Gmail** — access and search email through the Gmail API.
+- 🌐 **Web access** — search the web and fetch web content when required.
+- 🖥️ **Controlled desktop automation** — open approved applications, URLs and paths, type text, send keyboard shortcuts, and capture screenshots.
+- 🎙️ **Voice interface** — browser speech recognition with wake phrase activation and spoken responses.
+- 🖥️ **React dashboard** — a dark mission-control style interface for interacting with Baby.
 
-Baby V0.3 adds an offline Tool System separate from AI-provider selection.
-`ToolRegistry` manages uniquely named tools, and `ToolService` executes them.
-The default local tools are `calculator`, `datetime`, and `file_reader`.
-
-Use `GET /tools` to inspect their descriptions and input schemas. Execute one
-with `POST /tools/{tool_name}/execute`, for example:
-
-```json
-{"input": {"expression": "124 * 38"}}
-```
-
-`file_reader` only accepts approved text-file types at safe relative paths
-inside this workspace; it never writes files. The AI provider does not select
-or invoke tools yet.
-
-## Local memory
-
-Baby V0.4 adds a persistent memory layer independent of AI providers and tools:
+## 🏗️ Architecture
 
 ```text
-API → MemoryService → MemoryRepository → SQLite
+                         ┌──────────────────────┐
+                         │      React UI        │
+                         │  Chat • Voice • UI   │
+                         └──────────┬───────────┘
+                                    │
+                              HTTP / REST
+                                    │
+                         ┌──────────▼───────────┐
+                         │      FastAPI API     │
+                         └──────────┬───────────┘
+                                    │
+                         ┌──────────▼───────────┐
+                         │ Assistant Orchestrator│
+                         └──────┬───────┬────────┘
+                                │       │
+                    ┌───────────┘       └────────────┐
+                    ▼                                ▼
+             ┌─────────────┐                  ┌─────────────┐
+             │  AI Gateway  │                  │ Task System │
+             │ Gemini/Mock │                  │ Analyze     │
+             └─────────────┘                  │ Plan        │
+                                              │ Execute     │
+                                              └──────┬──────┘
+                                                     │
+                                              ┌──────▼──────┐
+                                              │ Tool Registry│
+                                              └──────┬──────┘
+                                                     │
+          ┌─────────┬────────┬────────┬────────┬────┼───────┬─────────┐
+          ▼         ▼        ▼        ▼        ▼    ▼       ▼         ▼
+      Calculator  Date/Time  Files    Web    Calendar Gmail  Desktop  ...
 ```
 
-Memories are explicitly created through the API—chat messages are never stored
-automatically. Supported memory types are `preference`, `fact`, and
-`instruction`. Basic validation rejects obvious passwords, API keys, tokens,
-and secrets.
+## 🔄 Request Flow
 
-The local SQLite database is created on first memory API use at `data/baby.db`.
-It is not stored in `.venv` and uses only Python's built-in `sqlite3` module.
-
-Examples:
-
-```http
-POST /memory
-Content-Type: application/json
-
-{"memory_type": "preference", "content": "Keep my emails concise and professional."}
-```
-
-```http
-GET /memory/search?q=emails
-```
-
-## Task planning
-
-Baby V0.5 adds a deterministic planning foundation. It recognizes the existing
-local capabilities—calculator, date/time, and text-file reading—without calling
-an LLM or executing a tool:
+For an actionable request, Baby follows a structured path rather than allowing the model to directly execute arbitrary operations:
 
 ```text
-API -> TaskService -> TaskAnalyzer -> TaskPlanner -> ToolRegistry -> TaskPlan
+User request
+     │
+     ▼
+Assistant Orchestrator
+     │
+     ├── Normal conversation ──► AI Provider ──► Response
+     │
+     └── Actionable request
+              │
+              ▼
+        Task Analyzer
+              │
+              ▼
+        Task Planner
+              │
+              ▼
+        Tool Registry
+              │
+              ▼
+        Task Executor
+              │
+              ▼
+        Tool / External Service
+              │
+              ▼
+           Result
 ```
 
-`POST /tasks/plan` accepts a natural-language task and returns either pending
-steps or `needs_clarification`. For example:
+This separation keeps **reasoning, planning, and execution** as distinct responsibilities.
 
-```json
-{"message": "calculate 20 + 30"}
-```
+## 🧰 Tool System
 
-returns a plan with a `calculator` step and `{"expression": "20 + 30"}`.
-Requests such as `book a restaurant` or `do this` return a useful clarification
-question rather than pretending Baby can perform an unsupported action.
+| Tool | Purpose |
+|---|---|
+| `calculator` | Arithmetic calculations |
+| `datetime` | Date and time operations |
+| `file_reader` | Read approved local text files |
+| `web_search` | Search the web |
+| `web_fetch` | Retrieve web content |
+| `calendar` | Google Calendar operations |
+| `email` | Gmail operations |
+| `desktop` | Controlled Windows desktop actions |
 
-## Task execution
+The `ToolRegistry` manages available tools, while the task system determines and executes the required tool steps.
 
-Baby V0.6 executes only an existing planned task, using registered local tools:
+## 🧠 AI Gateway
+
+Baby separates the assistant architecture from the AI provider through a provider abstraction.
+
+The project includes:
+
+- `AIProvider` — generic provider contract
+- `GeminiProvider` — Gemini-backed AI provider
+- `MockAIProvider` — deterministic local provider for development and testing
+
+This allows the application architecture to remain independent of a single model provider.
+
+## 💾 Persistent Memory
+
+Baby includes a local memory layer backed by SQLite:
 
 ```text
-API -> TaskService -> TaskExecutor -> ToolService -> ToolRegistry -> Local Tool
+MemoryService
+      │
+      ▼
+MemoryRepository
+      │
+      ▼
+SQLite
 ```
 
-Planning and execution remain separate. `POST /tasks/plan` only creates pending
-steps; `POST /tasks/{task_id}/execute` runs those pending steps in order. Each
-step progresses from `pending` to `running` to either `completed` (with a
-stored result) or `failed` (with an error). A failed step stops all later steps,
-which remain pending.
+Supported memory categories include:
 
-Tasks needing clarification cannot be executed and return HTTP `409 Conflict`.
-The executor never invents tools: it runs only tools present in the existing
-ToolRegistry. No files, shell commands, or external services are executed.
+- `preference`
+- `fact`
+- `instruction`
 
-Example:
+Memory is explicitly created through the application rather than automatically storing every conversation.
 
-```http
-POST /tasks/{task_id}/execute
-```
+## 📅 Gmail & Google Calendar
 
-For a planned `calculate 25 * 4` task, the completed step stores:
+Baby integrates with Google services through their APIs.
 
-```json
-{"value": 100}
-```
+### Google Calendar
 
-The deterministic analyzer and planner can later be replaced or augmented by
-an LLM without changing the task API.
+Baby can read calendar information and create events through the authenticated Calendar integration.
 
-## Local AI-to-task orchestration
+### Gmail
 
-Baby V0.7 connects the local deterministic AI gateway to the existing planner
-and executor:
+Baby can retrieve and search email through the authenticated Gmail integration.
+
+OAuth credentials and tokens are intentionally excluded from version control.
+
+## 🖥️ Controlled Desktop Automation
+
+Baby includes a deliberately constrained Windows desktop tool layer.
+
+Supported capabilities include:
+
+- Opening approved applications
+- Opening HTTP/HTTPS URLs
+- Opening existing files and folders
+- Typing text
+- Sending keyboard shortcuts
+- Capturing screenshots
+
+The desktop layer uses an explicit allowlist for supported applications and does not provide unrestricted shell execution or arbitrary autonomous clicking.
+
+This boundary is intentional: the goal is to demonstrate **controlled computer interaction**, not unrestricted computer-use autonomy.
+
+## 🎙️ Voice Interface
+
+Baby's frontend supports browser-based voice interaction using:
+
+- Speech Recognition
+- `en-IN` language recognition
+- Wake phrase: **"Hey Baby"**
+- Browser/OS speech synthesis for spoken responses
+
+The browser requires the user to activate microphone access once. After activation, Baby can continuously listen for the wake phrase while voice mode is active.
+
+## 🖥️ Frontend
+
+The frontend is built with React and Vite.
+
+The dashboard provides:
+
+- Central assistant interface
+- Voice control
+- Chat interaction
+- Calendar panel
+- Email panel
+- Quick actions
+- Calendar event creation
+- Email reading
+- Dark mission-control inspired visual design
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Python |
+| API | FastAPI |
+| AI | Google Gemini + local Mock provider |
+| Frontend | React + Vite |
+| Database | SQLite |
+| Calendar | Google Calendar API |
+| Email | Gmail API |
+| Voice | Browser Speech Recognition + Speech Synthesis |
+| Desktop | Python desktop automation |
+| Testing | Pytest |
+| Configuration | `.env` / environment variables |
+
+## 📁 Project Structure
 
 ```text
-User request -> AI Gateway -> local mock interpretation -> TaskService
--> TaskExecutor -> ToolService -> ToolRegistry -> Local Tool
+Baby/
+├── app/
+│   ├── api/
+│   ├── core/
+│   └── services/
+│       ├── assistant/
+│       ├── calendar/
+│       ├── email/
+│       ├── memory/
+│       ├── providers/
+│       ├── session/
+│       ├── tasks/
+│       └── tools/
+├── frontend/
+│   └── src/
+├── tests/
+├── .env.example
+├── .gitignore
+├── pyproject.toml
+└── README.md
 ```
 
-`POST /assistant/chat` accepts a message, obtains a deterministic interpretation
-from the local `MockAIProvider`, creates a task plan, and executes supported
-tasks through the existing task and tool services. The provider remains fully
-local—there is no external AI API.
+## 🚀 Local Setup
 
-```http
-POST /assistant/chat
-Content-Type: application/json
-
-{"message": "calculate 25 * 4"}
-```
-
-The response includes the task lifecycle and final tool result:
-
-```json
-{
-  "message": "calculate 25 * 4",
-  "interpretation": "calculator",
-  "task_id": "...",
-  "status": "completed",
-  "response": "100"
-}
-```
-
-Unsupported or ambiguous messages return structured `needs_clarification`
-responses and are never executed.
-
-## Context-aware memory
-
-Baby V0.8 adds a fully local memory-retrieval step before mock AI
-interpretation:
-
-```text
-User message -> relevant persistent memories -> AssistantService
--> MockAIProvider -> TaskService -> TaskExecutor
-```
-
-Persistent memory is long-lived information created explicitly through the
-memory API. Session context is not implemented in V0.8; each assistant request
-is independent. Task state remains in the in-memory task store and is never
-written as user memory.
-
-The assistant extracts message tokens, uses the existing local memory search to
-find candidates, scores them deterministically, and uses at most three matches.
-Only memory IDs and types are returned in the assistant response; selected
-content is supplied internally to the local MockAIProvider and is not exposed.
-
-```http
-POST /memory
-Content-Type: application/json
-
-{"memory_type": "preference", "content": "Keep Docker explanations clear and practical."}
-```
-
-```http
-POST /assistant/chat
-Content-Type: application/json
-
-{"message": "Explain Docker"}
-```
-
-The response includes safe context metadata:
-
-```json
-{
-  "status": "needs_clarification",
-  "context": {
-    "user_message": "Explain Docker",
-    "persistent_memories": [{"id": 1, "memory_type": "preference"}],
-    "session_id": null
-  }
-}
-```
-
-V0.8 remains provider-independent and uses only the deterministic local mock;
-no external AI service, embedding model, or vector database is involved.
-
-## Requirements
+### Prerequisites
 
 - Python 3.12
+- Node.js / npm
+- Google API credentials for Gmail and Calendar features
+- A Gemini API key for Gemini-backed AI features
 
-## Install
+### Backend
 
-Activate the existing Python 3.12 virtual environment, then install the project and development dependencies:
+From the project root:
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 ```
 
-## Run
+Configure the required environment variables using `.env.example`.
+
+Start the FastAPI backend:
 
 ```powershell
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 ```
 
-The API provides `GET /`, `GET /health`, `POST /chat`, `GET /tools`,
-`POST /tools/{tool_name}/execute`, and these memory endpoints:
+The API will be available at:
 
-- `POST /memory`
-- `GET /memory`
-- `GET /memory/search?q=...`
-- `GET /memory/{memory_id}`
-- `PUT /memory/{memory_id}`
-- `DELETE /memory/{memory_id}`
+```text
+http://127.0.0.1:8001
+```
 
-Task planning endpoints:
+FastAPI documentation:
 
-- `POST /tasks/plan`
-- `GET /tasks/{task_id}`
-- `POST /tasks/{task_id}/execute`
-- `POST /assistant/chat`
+```text
+http://127.0.0.1:8001/docs
+```
 
-## Test
+### Frontend
+
+Open a second terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Then open the Vite development URL shown in the terminal.
+
+## 🧪 Testing
+
+Run the automated test suite from the project root:
 
 ```powershell
 pytest
 ```
+
+Integration checks for external services are also included in the repository.
+
+## 🔐 Security & Design Boundaries
+
+Baby is designed around explicit control boundaries.
+
+- Secrets and OAuth credentials are excluded from Git.
+- Local runtime data is excluded from Git.
+- File reading is restricted to approved text-file types and safe paths.
+- Desktop applications are allowlisted.
+- Desktop URLs are restricted to HTTP/HTTPS.
+- Desktop actions are exposed through dedicated tools rather than arbitrary shell execution.
+- Memory is explicitly created instead of automatically persisting every conversation.
+- Tool execution happens through the registered tool system.
+
+These constraints are part of the architecture, not afterthoughts.
+
+## 📌 Current Status
+
+**Baby V1.0 — Functional Personal AI OS Prototype**
+
+Implemented:
+
+- [x] FastAPI backend
+- [x] Provider-independent AI gateway
+- [x] Gemini integration
+- [x] Deterministic mock AI provider
+- [x] Tool registry and execution system
+- [x] Calculator and date/time tools
+- [x] File reading
+- [x] Web search and fetch
+- [x] Persistent memory
+- [x] Session persistence
+- [x] Task analysis, planning and execution
+- [x] Gmail integration
+- [x] Google Calendar integration
+- [x] React/Vite dashboard
+- [x] Voice interface
+- [x] Controlled Windows desktop automation
+- [x] Automated tests
+
+## 🧭 Future Directions
+
+Possible future development includes:
+
+- More robust wake-word detection
+- Neural/local text-to-speech
+- More desktop actions with stronger confirmation controls
+- Richer multi-step planning
+- Better memory retrieval and ranking
+- Additional external service integrations
+- Improved observability and execution history
+- Production deployment and authentication
+
+## 🎯 Why Baby?
+
+Baby is an exploration of the architecture required to turn a conversational AI model into an **action-oriented personal operating system**.
+
+The core idea is simple:
+
+> **The model reasons. The system decides. The tools act.**
+
+By separating these responsibilities, Baby can evolve from a chat interface into a modular AI system capable of interacting with both digital services and the user's computer.
+
+## 👤 Author
+
+**Rajdeep Sonkar**
+
+Built as a personal AI systems project focused on AI orchestration, automation, memory, tool use, and full-stack engineering.
